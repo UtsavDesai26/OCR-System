@@ -1,20 +1,17 @@
-# Use the official Node.js image as the base image
-FROM node:18
+# Stage 1: Build
+FROM node:20.0.0 AS build
 
-# Set the working directory inside the container
 WORKDIR /app
-
-# Copy package.json and package-lock.json to the container
 COPY package*.json ./
-
-# Install project dependencies
-RUN npm install --force
-
-# Copy the rest of the application code to the container
+RUN npm install
 COPY . .
+RUN npm run build
 
-# Expose port 3000
-EXPOSE 3000
-
-# Start the Nest.js application
-CMD ["npm", "start"]
+# Stage 2: Production
+FROM node:20.0.0
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --only=production
+COPY --from=build /app/dist ./dist
+COPY zaver-app-production-66642ceddc7b.json ./zaver-app-production-66642ceddc7b.json
+CMD ["npm", "run", "start:prod"]
