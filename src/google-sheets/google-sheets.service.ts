@@ -75,7 +75,7 @@ export class GoogleSheetsService {
    */
   private loadCredentials(): any {
     try {
-      const credentialsPath = './zaver-app-production-a4fdeba863c8.json';
+      const credentialsPath = './zaver-app-production-66642ceddc7b.json';
       return JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
     } catch (error) {
       throw new Error(
