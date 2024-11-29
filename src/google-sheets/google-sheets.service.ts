@@ -3,12 +3,12 @@ import { google, sheets_v4, drive_v3 } from 'googleapis';
 import * as fs from 'fs';
 import { AppendToSheet } from './interfaces/append-sheet.interface';
 import { ProcessSheetResponse } from './interfaces/process-sheet-response.interface';
+import { FolderMapping } from './config/folder-mapping';
 
 @Injectable()
 export class GoogleSheetsService {
   private readonly sheets: sheets_v4.Sheets;
   private readonly drive: drive_v3.Drive;
-  private readonly BASE_FOLDER_ID = process.env.BASE_FOLDER_ID;
 
   constructor() {
     const credentials = this.loadCredentials();
@@ -25,9 +25,12 @@ export class GoogleSheetsService {
   }
 
   /**
-   * Processes data for the Google Sheet: creates or retrieves the sheet and appends data.
+   * Process data to append to the Google Sheet
    */
-  async processSheetData(dto: AppendToSheet): Promise<ProcessSheetResponse> {
+  async processSheetData(
+    dto: AppendToSheet,
+    folderType: keyof typeof FolderMapping,
+  ): Promise<ProcessSheetResponse> {
     const { username, imageType, imageData } = dto;
 
     if (
@@ -42,10 +45,20 @@ export class GoogleSheetsService {
       );
     }
 
+    const folderId = FolderMapping[folderType];
+    if (!folderId) {
+      throw new HttpException(
+        `Invalid folder type: ${folderType}`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     try {
       const spreadsheetTitle = `${username.toUpperCase()}_MainSheet`;
-      const spreadsheetId =
-        await this.findOrCreateSpreadsheet(spreadsheetTitle);
+      const spreadsheetId = await this.findOrCreateSpreadsheet(
+        spreadsheetTitle,
+        folderId,
+      );
 
       const existingSheetNames = await this.getSheetNames(spreadsheetId);
 
@@ -85,56 +98,90 @@ export class GoogleSheetsService {
   }
 
   /**
-   * Retrieves or creates a new spreadsheet by title.
+   * Find or create a spreadsheet by title in the given folder
    */
-  private async findOrCreateSpreadsheet(title: string): Promise<string> {
-    const existingFile = await this.searchForSpreadsheet(title);
-
-    if (existingFile) return existingFile.id;
-
-    return this.createSpreadsheet(title);
+  private async findOrCreateSpreadsheet(
+    title: string,
+    folderId: string,
+  ): Promise<string> {
+    try {
+      const existingFile = await this.searchForSpreadsheet(title, folderId);
+      if (existingFile) return existingFile.id;
+      return this.createSpreadsheet(title, folderId);
+    } catch (error) {
+      console.log('error', error);
+      throw new HttpException(
+        `Error finding or creating spreadsheet: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   /**
-   * Searches for an existing spreadsheet by title.
+   * Search for a spreadsheet by title
    */
   private async searchForSpreadsheet(
     title: string,
+    folderId: string,
   ): Promise<drive_v3.Schema$File | undefined> {
-    const response = await this.drive.files.list({
-      q: `'${this.BASE_FOLDER_ID}' in parents and name = '${title}' and mimeType = 'application/vnd.google-apps.spreadsheet'`,
-      fields: 'files(id, name)',
-    });
-
-    return response.data.files?.[0];
-  }
-
-  /**
-   * Creates a new spreadsheet with the specified title.
-   */
-  private async createSpreadsheet(title: string): Promise<string> {
-    const response = await this.drive.files.create({
-      requestBody: {
-        name: title,
-        mimeType: 'application/vnd.google-apps.spreadsheet',
-        parents: [this.BASE_FOLDER_ID],
-      },
-      fields: 'id',
-    });
-
-    if (!response.data.id) {
-      throw new Error('Failed to create spreadsheet');
+    try {
+      const response = await this.drive.files.list({
+        q: `'${folderId}' in parents and name = '${title}' and mimeType = 'application/vnd.google-apps.spreadsheet'`,
+        fields: 'files(id, name)',
+      });
+      return response.data.files?.[0];
+    } catch (error) {
+      throw new HttpException(
+        `Failed to search for spreadsheet '${title}': ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
-
-    return response.data.id;
   }
 
   /**
-   * Retrieves the names of all sheets in a spreadsheet.
+   * Create a new spreadsheet in the given folder
+   */
+  private async createSpreadsheet(
+    title: string,
+    folderId: string,
+  ): Promise<string> {
+    try {
+      const response = await this.drive.files.create({
+        requestBody: {
+          name: title,
+          mimeType: 'application/vnd.google-apps.spreadsheet',
+          parents: [folderId],
+        },
+        fields: 'id',
+      });
+
+      return response.data.id;
+    } catch (error) {
+      throw new HttpException(
+        `Failed to create spreadsheet '${title}': ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * Get sheet names in a spreadsheet
    */
   private async getSheetNames(spreadsheetId: string): Promise<string[]> {
-    const response = await this.sheets.spreadsheets.get({ spreadsheetId });
-    return response.data.sheets.map((sheet) => sheet.properties?.title || '');
+    try {
+      const response = await this.sheets.spreadsheets.get({
+        spreadsheetId,
+      });
+
+      return (
+        response.data.sheets?.map((sheet) => sheet.properties?.title) || []
+      );
+    } catch (error) {
+      throw new HttpException(
+        `Failed to get sheet names: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   /**
@@ -193,14 +240,28 @@ export class GoogleSheetsService {
   /**
    * Extracts the headers from the data.
    */
-  private extractHeaders(data: any[]): string[] {
-    return Object.keys(data[0]);
+  private extractHeaders(data: Record<string, any>[]): string[] {
+    try {
+      return Object.keys(data[0]);
+    } catch (error) {
+      throw new HttpException(
+        'Failed to extract headers from the data',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   /**
    * Maps data to values.
    */
-  private mapDataToValues(data: any[]): any[] {
-    return data.map((item) => Object.values(item));
+  private mapDataToValues(data: Record<string, any>[]): any[][] {
+    try {
+      return data.map((row) => Object.values(row));
+    } catch (error) {
+      throw new HttpException(
+        'Failed to map data to values',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 }
