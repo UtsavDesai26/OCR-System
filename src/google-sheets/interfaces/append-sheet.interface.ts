@@ -1,5 +1,4 @@
 export interface AppendToSheet {
-  username: string;
-  imageType: string;
+  imageType: string; // Maps to the workbook sheet
   imageData: Array<Record<string, any>>;
 }

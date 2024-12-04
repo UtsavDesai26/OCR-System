@@ -1,4 +1,4 @@
 export const FolderMapping = {
-  farmCollector: '1E2R_jSVUfqadngolX-PJMNXUL9-Wm9kY',
-  payslipCollector: '1PKVDzVZI_M7C3xmKPrEuRn01f4S9Rqa-',
+  farmCollectorSheet: '1M_1TSi_2rs8lQOpB73u6hUA8cTo4IY83nt7YkqrFpOw',
+  payslipCollectorSheet: '1QEwIpmMcWIe4iaY8EEapE2exiCSlFiG-uWlm0UCFi8E',
 };

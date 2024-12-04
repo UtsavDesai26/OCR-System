@@ -15,18 +15,27 @@ export class GoogleSheetsController {
   constructor(private readonly googleSheetsService: GoogleSheetsService) {}
 
   @Post('append-to-sheet')
-  async appendToSheet(
-    @Body() body: AppendToSheet,
-    @Query('folderType') folderType: string,
-  ) {
+  async appendToSheet(@Body() body: AppendToSheet) {
     try {
-      if (!folderType) {
-        throw new HttpException('Missing folder type', HttpStatus.BAD_REQUEST);
+      const { imageType } = body;
+
+      // Determine which Google Sheet to use
+      const sheetId =
+        imageType === 'Farmer'
+          ? FolderMapping.farmCollectorSheet
+          : FolderMapping.payslipCollectorSheet;
+
+      if (!sheetId) {
+        throw new HttpException(
+          'Invalid sheet configuration in FolderMapping',
+          HttpStatus.BAD_REQUEST,
+        );
       }
 
-      return await this.googleSheetsService.processSheetData(
+      return await this.googleSheetsService.appendDataToWorkbookSheet(
         body,
-        folderType as keyof typeof FolderMapping,
+        sheetId,
+        imageType,
       );
     } catch (error) {
       console.error('Error handling the request:', error.message);
